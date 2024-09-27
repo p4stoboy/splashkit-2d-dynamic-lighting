@@ -1,0 +1,250 @@
+#include "./include/types.h"
+#include <cmath>
+#include <algorithm>
+#include <vector>
+
+double calculate_breathing_radius(double base_radius, double total_time) {
+    return base_radius + std::sin(total_time * BREATHING_SPEED) * BREATHING_MAGNITUDE;
+}
+
+void update_torch(Torch& torch, const Player& player, double total_time) {
+    torch.position = player.position;
+    torch.direction = {cos(player.heading), sin(player.heading)};
+    torch.current_radius = calculate_breathing_radius(torch.base_radius, total_time);
+}
+
+// Helper function to get the height of a cell
+int get_cell_height(const Grid& grid, int x, int y) {
+    if (x >= 0 && x < grid.width && y >= 0 && y < grid.height) {
+        return static_cast<int>(grid.cells[y * grid.width + x].height);
+    }
+    return 0;
+}
+
+bool is_point_in_player(const Player& player, int x, int y) {
+    // Convert player position to grid coordinates
+    int player_x = static_cast<int>(player.position.x);
+    int player_y = static_cast<int>(player.position.y);
+
+    // Calculate player dimensions in grid units
+    int player_width = static_cast<int>(CELL_SIZE * 2.5 / CELL_SIZE);
+    int player_height = static_cast<int>(CELL_SIZE * 1.5 / CELL_SIZE);
+
+    // Calculate player bounds
+    int player_left = player_x - player_width / 2;
+    int player_right = player_x + player_width / 2;
+    int player_top = player_y - player_height / 2;
+    int player_bottom = player_y + player_height / 2;
+
+    // Check if the point is within the player's bounds
+    return (x >= player_left && x <= player_right && y >= player_top && y <= player_bottom);
+}
+
+bool has_clear_path(const Grid& grid, int x1, int y1, int z1, int x2, int y2, int z2, const Player& player, bool is_torch = false) {
+    int dx = std::abs(x2 - x1);
+    int dy = std::abs(y2 - y1);
+    int dz = z2 - z1;
+    int x = x1;
+    int y = y1;
+    double z = z1 + 0.1;  // Start slightly above the terrain
+    int n = 1 + dx + dy;
+    int x_inc = (x2 > x1) ? 1 : -1;
+    int y_inc = (y2 > y1) ? 1 : -1;
+    double z_inc = static_cast<double>(dz) / n;
+    int error = dx - dy;
+    dx *= 2;
+    dy *= 2;
+
+    for (int i = 0; i < n; ++i) {
+        int cell_height = get_cell_height(grid, x, y);
+
+        // Check if the ray is blocked by terrain or the player
+        if (z < cell_height || (z < static_cast<int>(HeightLevel::PLAYER) && is_point_in_player(player, x, y) && !is_torch)) {
+            return false;
+        }
+
+        if (error > 0) {
+            x += x_inc;
+            error -= dy;
+        } else {
+            y += y_inc;
+            error += dx;
+        }
+        z += z_inc;
+    }
+
+    return true;
+}
+
+//bool has_clear_path(const Grid& grid, int x1, int y1, int z1, int x2, int y2, int z2) {
+//    int dx = std::abs(x2 - x1);
+//    int dy = std::abs(y2 - y1);
+//    int dz = z2 - z1;
+//    int x = x1;
+//    int y = y1;
+//    double z = z1 + 0.1;  // Start slightly above the terrain
+//    int n = 1 + dx + dy;
+//    int x_inc = (x2 > x1) ? 1 : -1;
+//    int y_inc = (y2 > y1) ? 1 : -1;
+//    double z_inc = static_cast<double>(dz) / n;
+//    int error = dx - dy;
+//    dx *= 2;
+//    dy *= 2;
+//
+//    for (int i = 0; i < n; ++i) {
+//        int cell_height = get_cell_height(grid, x, y);
+//
+//
+//        // Allow the ray to pass if it's at or above the cell height
+//        if (z < cell_height) {
+//            return false;
+//        }
+//
+//        if (error > 0) {
+//            x += x_inc;
+//            error -= dy;
+//        } else {
+//            y += y_inc;
+//            error += dx;
+//        }
+//        z += z_inc;
+//    }
+//
+//    return true;
+//}
+
+
+void calculate_torch_lighting(Grid& grid, const Torch& torch, const Player& player) {
+    const double MAX_TORCH_RADIUS = torch.current_radius * 2; // Adjust this factor as needed
+    const int min_x = std::max(0, static_cast<int>(torch.position.x - MAX_TORCH_RADIUS));
+    const int max_x = std::min(grid.width - 1, static_cast<int>(torch.position.x + MAX_TORCH_RADIUS));
+    const int min_y = std::max(0, static_cast<int>(torch.position.y - MAX_TORCH_RADIUS));
+    const int max_y = std::min(grid.height - 1, static_cast<int>(torch.position.y + MAX_TORCH_RADIUS));
+
+    const double ellipse_distance = torch.current_radius * 1.2;
+    const double ellipse_width = torch.current_radius * 1.2;
+    const double ellipse_height = torch.current_radius * 0.8;
+    const double max_angle = std::atan2(ellipse_height / 2, ellipse_distance) + 0.05;
+    #pragma omp parallel for collapse(2)
+    for (int y = min_y; y <= max_y; ++y) {
+        for (int x = min_x; x <= max_x; ++x) {
+            double dx = x - torch.position.x;
+            double dy = y - torch.position.y;
+            double distance_squared = dx*dx + dy*dy;
+
+            if (distance_squared > MAX_TORCH_RADIUS * MAX_TORCH_RADIUS) {
+                continue; // Skip this cell, it's too far from the torch
+            }
+
+            double distance = std::sqrt(distance_squared);
+            double rotated_dx = dx * torch.direction.x + dy * torch.direction.y;
+            double rotated_dy = -dx * torch.direction.y + dy * torch.direction.x;
+            double ellipse_factor = std::pow(rotated_dx - ellipse_distance, 2) / std::pow(ellipse_width / 2, 2)
+                                    + std::pow(rotated_dy, 2) / std::pow(ellipse_height / 2, 2);
+
+            int torch_light_level = 0;
+            bool is_lit = false;
+
+            if (ellipse_factor <= 1.1) {
+                torch_light_level = LIGHT_LEVELS;
+                is_lit = true;
+            } else if (distance <= torch.current_radius && rotated_dx >= 0) {
+                double angle = std::atan2(std::abs(rotated_dy), rotated_dx);
+                if (angle <= max_angle) {
+                    torch_light_level = grid.cells[y * grid.width + x].height <= HeightLevel::PLAYER ? LIGHT_LEVELS / 2 : LIGHT_LEVELS;
+                    is_lit = true;
+                }
+            }
+
+            if (is_lit && has_clear_path(grid,
+                                         x, y, static_cast<int>(grid.cells[y * grid.width + x].height),
+                                         static_cast<int>(torch.position.x),
+                                         static_cast<int>(torch.position.y),
+                                         static_cast<int>(HeightLevel::TORCH), player, true)) {
+                grid.cells[y * grid.width + x].light_level = std::max(grid.cells[y * grid.width + x].light_level, torch_light_level);
+            }
+        }
+    }
+}
+
+
+void calculate_radial_lighting(Grid& grid, const std::vector<RadialLight>& lights, const Player& player) {
+    for (const auto& light : lights) {
+        int min_x = std::max(0, static_cast<int>(light.position.x - light.radius));
+        int max_x = std::min(grid.width - 1, static_cast<int>(light.position.x + light.radius));
+        int min_y = std::max(0, static_cast<int>(light.position.y - light.radius));
+        int max_y = std::min(grid.height - 1, static_cast<int>(light.position.y + light.radius));
+        #pragma omp parallel for collapse(2)
+        for (int y = min_y; y <= max_y; ++y) {
+            for (int x = min_x; x <= max_x; ++x) {
+                double dx = x - light.position.x;
+                double dy = y - light.position.y;
+                double distance_squared = dx*dx + dy*dy;
+
+                if (distance_squared <= light.radius * light.radius) {
+                    double distance = std::sqrt(distance_squared);
+                    int cell_height = get_cell_height(grid, x, y);
+                    if (has_clear_path(grid,
+                                       x, y, cell_height,
+                                       static_cast<int>(light.position.x),
+                                       static_cast<int>(light.position.y),
+                                       static_cast<int>(light.height), player, false)) {
+                        int light_level = light.intensity; //static_cast<int>(light.intensity * (1.0 - distance / light.radius) * LIGHT_LEVELS);
+                        grid.cells[y * grid.width + x].light_level = std::max(grid.cells[y * grid.width + x].light_level, light_level);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Main function to update grid lighting
+void update_grid_lighting(Grid& grid, const std::vector<RadialLight>& lights, const Torch& torch, const Player& player, bool torch_on) {
+    // Reset light levels
+    for (auto& cell : grid.cells) {
+        cell.light_level = 0;
+    }
+
+    calculate_radial_lighting(grid, lights, player);
+    if (torch_on) {
+        calculate_torch_lighting(grid, torch, player);
+    }
+}
+
+// Function to apply lighting to the base color
+color apply_lighting(color base_color, int light_level) {
+    double luminosity = AMBIENT_LIGHT + (1.0 - AMBIENT_LIGHT) * (static_cast<double>(light_level) / LIGHT_LEVELS);
+    int r = static_cast<int>(luminosity * red_of(base_color));
+    int g = static_cast<int>(luminosity * green_of(base_color));
+    int b = static_cast<int>(luminosity * blue_of(base_color));
+    return rgba_color(r, g, b, 255);
+}
+
+
+void update_radial_light_mover(RadialLight& light, const Grid& grid, double deltaTime) {
+    const double SPEED = 5.0; // Constant speed, adjust as needed
+
+    // Move the light
+    light.position.x += light.velocity.x * SPEED * deltaTime;
+    light.position.y += light.velocity.y * SPEED * deltaTime;
+
+    // Check for collisions with grid edges
+    if (light.position.x < 0 || light.position.x >= grid.width) {
+        light.velocity.x = -light.velocity.x;
+        light.position.x = std::max(0.0, std::min(static_cast<double>(grid.width - 0.01), light.position.x));
+    }
+
+    if (light.position.y < 0 || light.position.y >= grid.height) {
+        light.velocity.y = -light.velocity.y;
+        light.position.y = std::max(0.0, std::min(static_cast<double>(grid.height - 0.01), light.position.y));
+    }
+}
+
+void update_radial_light_movers(std::vector<RadialLight>& lights, const Grid& grid, double deltaTime) {
+    for (auto& light : lights) {
+        update_radial_light_mover(light, grid, deltaTime);
+    }
+    std::sort(radial_lights.begin(), radial_lights.end(), [](const RadialLight& a, const RadialLight& b) {
+        return a.radius > b.radius;
+    });
+}

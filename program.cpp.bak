@@ -1,0 +1,151 @@
+#include "include/types.h"
+#include "splashkit.h"
+#include <iostream>
+#include <chrono>
+#include <vector>
+#include <random>
+#include <omp.h>
+#include <deque>
+#include <numeric>
+#include <iomanip>
+#include <sstream>
+
+std::vector<RadialLight> create_radial_lights(int num_lights, int grid_width, int grid_height) {
+    std::vector<RadialLight> lights;
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<> x_dis(0, grid_width - 1);
+    std::uniform_real_distribution<> y_dis(0, grid_height - 1);
+    std::uniform_real_distribution<> intensity_dis(5.0, 15.0);
+    std::uniform_real_distribution<> radius_dis(10.0, 30.0);
+
+    lights.push_back({
+                             {GRID_WIDTH/6, GRID_HEIGHT/6},
+                             5, //intensity_dis(gen),
+                             GRID_WIDTH/4,
+                             {.x= 1, .y= 0.5},
+                             HeightLevel::RADIAL
+                     });
+    lights.push_back({
+                             {GRID_WIDTH/2, GRID_HEIGHT},
+                             5, //intensity_dis(gen),
+                             GRID_WIDTH/8,
+                             {.x= 0.4, .y= 0.5},
+                             HeightLevel::RADIAL
+                     });
+    lights.push_back({
+                             {GRID_WIDTH, GRID_HEIGHT/2},
+                             5, //intensity_dis(gen),
+                             GRID_WIDTH/10,
+                             {.x= -0.8, .y= -0.5},
+                             HeightLevel::RADIAL
+                     });
+    return lights;
+}
+
+int main() {
+    open_window("Lighting Demo", SCREEN_WIDTH, SCREEN_HEIGHT);
+    hide_mouse();
+    load_sound_effect("gunshot", "gun_shot_1.wav");
+    load_sound_effect("hit", "bullet_hit_1.wav");
+
+    Grid grid = create_grid(GRID_WIDTH, GRID_HEIGHT);
+    Player player = {{GRID_WIDTH / 2.0, GRID_HEIGHT / 2.0}, {0, 0}, 0, 100};
+
+    std::vector<RadialLight> radial_lights = create_radial_lights(10, GRID_WIDTH, GRID_HEIGHT);
+    Torch torch = {{player.position.x, player.position.y}, {1, 0}, TORCH_RADIUS, TORCH_RADIUS};
+
+    std::vector<Bullet> bullets;
+    std::vector<Particle> particles;
+
+    auto start_time = std::chrono::high_resolution_clock::now();
+    auto last_frame_time = start_time;
+    bool torch_on = true;
+    const int BENCHMARK_FRAMES = 60; // Number of frames to average over
+    std::deque<double> frame_times;
+
+    while (!quit_requested() && player.health > 0) {
+        auto frame_start = std::chrono::high_resolution_clock::now();
+
+        // Calculate delta time
+        std::chrono::duration<double> delta_duration = frame_start - last_frame_time;
+        double delta_time = delta_duration.count();
+        last_frame_time = frame_start;
+
+        double total_time = std::chrono::duration<double>(frame_start - start_time).count();
+
+        process_events();
+
+        // Parallelize state updates
+#pragma omp parallel sections
+        {
+#pragma omp section
+            {
+                update_player(player, grid);
+            }
+
+#pragma omp section
+            {
+                update_torch(torch, player, total_time);
+            }
+
+#pragma omp section
+            {
+                update_bullets(bullets, particles, grid);
+            }
+#pragma omp section
+            {
+                update_particles(particles);
+            }
+        }
+        update_radial_light_movers(radial_lights, grid, delta_time);
+
+        // Create a new bullet when the left mouse button is pressed
+        if (mouse_down(LEFT_BUTTON) && player.cooldown == 0) {
+//            stop_sound_effect("gunshot");
+            create_bullet(bullets, player);
+        }
+        if (key_typed(SPACE_KEY)) {
+            torch_on = !torch_on;
+        }
+
+        update_grid_lighting(grid, radial_lights, torch, player, torch_on);
+
+        clear_screen(COLOR_BLACK);
+        render_grid(grid);
+        render_player(player);
+//        render_bullets(bullets);
+        render_particles(particles);
+        draw_crosshair();
+        draw_text("Health: " + std::to_string(player.health), COLOR_WHITE, 10, 10);
+
+        // Benchmarking calculations
+        auto frame_end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double, std::milli> frame_duration = frame_end - frame_start;
+
+        frame_times.push_back(frame_duration.count());
+        if (frame_times.size() > BENCHMARK_FRAMES) {
+            frame_times.pop_front();
+        }
+
+        double average_frame_time = std::accumulate(frame_times.begin(), frame_times.end(), 0.0) / frame_times.size();
+        double fps = 1000.0 / average_frame_time;
+
+        // Display benchmark information
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(2)
+            << "Avg Frame Time: " << average_frame_time << " ms | FPS: " << fps;
+        draw_text(oss.str(), COLOR_WHITE, 10, SCREEN_HEIGHT - 30);
+
+        refresh_screen(60);
+
+        // Calculate actual frame time and sleep if necessary to maintain 60 FPS
+        auto current_time = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double, std::milli> elapsed = current_time - frame_start;
+        if (elapsed.count() < 16.67) { // Target 60 FPS (1000ms / 60 ≈ 16.67ms per frame)
+            delay(static_cast<int>(16.67 - elapsed.count()));
+        }
+    }
+
+    return 0;
+}
