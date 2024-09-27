@@ -3,8 +3,6 @@
 #include <random>
 #include <set>
 
-
-
 Grid create_grid(int width, int height) {
     Grid grid;
     grid.width = width;
@@ -15,10 +13,10 @@ Grid create_grid(int width, int height) {
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> x_dist(0, width - 1);
     std::uniform_int_distribution<> y_dist(0, height - 1);
-    std::uniform_int_distribution<> height_dist(static_cast<int>(HeightLevel::WALL), static_cast<int>(HeightLevel::CEILING));
+    std::uniform_int_distribution<> height_dist(static_cast<int>(HeightLevel::BLOCK1), static_cast<int>(HeightLevel::BLOCK3));
 
-    const int square_size = 10;
-    const int num_squares = 380;
+    const int square_size = 5;
+    const int num_squares = 100;
     std::set<std::pair<int, int>> square_positions;
 
     for (int i = 0; i < num_squares; ++i) {
@@ -29,7 +27,7 @@ Grid create_grid(int width, int height) {
         } while (square_positions.count({sx, sy}) > 0);
 
         square_positions.insert({sx, sy});
-        HeightLevel square_height = HeightLevel::BOX; //static_cast<HeightLevel>(height_dist(gen));
+        HeightLevel square_height = HeightLevel::BOX;
 
         for (int y = sy; y < std::min(sy + square_size, height); ++y) {
             for (int x = sx; x < std::min(sx + square_size, width); ++x) {

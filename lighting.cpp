@@ -1,13 +1,16 @@
-// lighting.cpp
-#include "include/types.h"
+#include "./include/types.h"
+#include "include/opencl_wrapper.h"
+#include "splashkit.h"
 #include <cmath>
 #include <algorithm>
+#include <vector>
+#include <string>
 
-//OpenCLWrapper openclWrapper;
-//
-//void initialize_lighting() {
-//    openclWrapper.initialize();
-//}
+OpenCLWrapper openclWrapper;
+
+void initialize_lighting() {
+    openclWrapper.initialize();
+}
 
 double calculate_breathing_radius(double base_radius, double total_time) {
     return base_radius + std::sin(total_time * BREATHING_SPEED) * BREATHING_MAGNITUDE;
@@ -19,9 +22,24 @@ void update_torch(Torch& torch, const Player& player, double total_time) {
     torch.current_radius = calculate_breathing_radius(torch.base_radius, total_time);
 }
 
-//void update_grid_lighting(Grid& grid, const std::vector<RadialLight>& lights, const Torch& torch, bool torch_on) {
-//    openclWrapper.calculateLighting(grid, lights, torch, torch_on);
-//}
+void update_grid_lighting(Grid& grid, const std::vector<RadialLight>& lights, const Torch& torch, bool torch_on) {
+    try {
+        write_line("Entering update_grid_lighting...");
+        write_line("Grid size: " + std::to_string(grid.width) + "x" + std::to_string(grid.height));
+        write_line("Number of lights: " + std::to_string(lights.size()));
+        write_line(string("Torch on: ") + (torch_on ? "yes" : "no"));
+
+        openclWrapper.calculateLighting(grid, lights, torch, torch_on);
+
+        write_line("Grid lighting calculation completed.");
+    } catch (const cl::Error& e) {
+        write_line("OpenCL error in update_grid_lighting: " + string(e.what()) + " (" + std::to_string(e.err()) + ")");
+    } catch (const std::exception& e) {
+        write_line("Standard exception in update_grid_lighting: " + string(e.what()));
+    } catch (...) {
+        write_line("Unknown exception in update_grid_lighting");
+    }
+}
 
 color apply_lighting(color base_color, int light_level) {
     double luminosity = AMBIENT_LIGHT + (1.0 - AMBIENT_LIGHT) * (static_cast<double>(light_level) / LIGHT_LEVELS);

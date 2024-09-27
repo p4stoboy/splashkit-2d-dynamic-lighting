@@ -1,5 +1,3 @@
-// lighting_kernels.cl
-
 #define LIGHT_LEVELS 5
 #define PLAYER_HEIGHT 10
 #define TORCH_HEIGHT 30
@@ -30,7 +28,7 @@ bool has_clear_path(__global const int* grid_heights, int x1, int y1, int z1, in
     int dz = z2 - z1;
     int x = x1;
     int y = y1;
-    float z = (float)z1 + 0.1f;
+    float z = (float)z1 + 0.1f;  // Start slightly above the terrain
     int n = 1 + dx + dy;
     int x_inc = (x2 > x1) ? 1 : -1;
     int y_inc = (y2 > y1) ? 1 : -1;
@@ -60,19 +58,13 @@ bool has_clear_path(__global const int* grid_heights, int x1, int y1, int z1, in
     return true;
 }
 
-__kernel void calculate_lighting(
+__kernel void calculate_radial_lighting(
+    __global int* light_levels,
     __global const int* grid_heights,
     __global const RadialLight* lights,
-    __global const int* base_colors,
-    __global float2* positions,
-    __global float3* colors,
-    __constant Torch* torch,
     int num_lights,
     int grid_width,
-    int grid_height,
-    float ambient_light,
-    int torch_on,
-    int cell_size
+    int grid_height
 ) {
     int x = get_global_id(0);
     int y = get_global_id(1);
@@ -80,19 +72,80 @@ __kernel void calculate_lighting(
     if (x >= grid_width || y >= grid_height) return;
 
     int index = y * grid_width + x;
+    int cell_height = grid_heights[index];
+    int max_light_level = 0;
 
-    // Debug pattern: alternating red and white cells
-    float r = (x + y) % 2 == 0 ? 1.0f : 1.0f;
-    float g = (x + y) % 2 == 0 ? 0.0f : 1.0f;
-    float b = (x + y) % 2 == 0 ? 0.0f : 1.0f;
+    for (int i = 0; i < num_lights; ++i) {
+        float dx = (float)(x - lights[i].position.x);
+        float dy = (float)(y - lights[i].position.y);
+        float distance_squared = dx*dx + dy*dy;
+        float radius = (float)lights[i].radius;
 
-    // Calculate position in pixel coordinates
-    float px = x * cell_size;
-    float py = y * cell_size;
+        if (distance_squared > radius * radius) {
+            continue;  // Lights are sorted by radius, so we can exit early
+        }
 
-    // Output position
-    positions[index] = (float2)(px, py);
+        if (has_clear_path(grid_heights, x, y, cell_height,
+                           (int)lights[i].position.x, (int)lights[i].position.y, lights[i].height,
+                           grid_width, grid_height)) {
+            int light_level = (int)lights[i].intensity;
+            max_light_level = max(max_light_level, light_level);
+        }
+    }
 
-    // Output color
-    colors[index] = (float3)(r, g, b);
+    light_levels[index] = max_light_level;
+}
+
+__kernel void calculate_torch_lighting(
+    __global int* light_levels,
+    __global const int* grid_heights,
+    __constant Torch* torch,
+    int grid_width,
+    int grid_height
+) {
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+
+    if (x >= grid_width || y >= grid_height) return;
+
+    int index = y * grid_width + x;
+    int cell_height = grid_heights[index];
+
+    float dx = (float)(x - torch->position.x);
+    float dy = (float)(y - torch->position.y);
+    float distance_squared = dx*dx + dy*dy;
+    float current_radius = (float)torch->current_radius;
+    float max_torch_radius = current_radius * 2.0f;
+
+    if (distance_squared <= max_torch_radius * max_torch_radius) {
+        float rotated_dx = dx * (float)torch->direction.x + dy * (float)torch->direction.y;
+        float rotated_dy = -dx * (float)torch->direction.y + dy * (float)torch->direction.x;
+
+        float ellipse_distance = current_radius * 1.2f;
+        float ellipse_width = current_radius * 1.2f;
+        float ellipse_height = current_radius * 0.8f;
+        float ellipse_factor = (float)(pow(rotated_dx - ellipse_distance, 2) / pow(ellipse_width / 2, 2)
+                               + pow(rotated_dy, 2) / pow(ellipse_height / 2, 2));
+
+        int torch_light_level = 0;
+        bool is_lit = false;
+
+        if (ellipse_factor <= 1.1f) {
+            torch_light_level = LIGHT_LEVELS;
+            is_lit = true;
+        } else if (sqrt(distance_squared) <= current_radius && rotated_dx >= 0) {
+            float angle = atan2(fabs(rotated_dy), rotated_dx);
+            float max_angle = atan2(ellipse_height / 2, ellipse_distance) + 0.05f;
+            if (angle <= max_angle) {
+                torch_light_level = cell_height <= PLAYER_HEIGHT ? LIGHT_LEVELS / 2 : LIGHT_LEVELS;
+                is_lit = true;
+            }
+        }
+
+        if (is_lit && has_clear_path(grid_heights, x, y, cell_height,
+                                     (int)torch->position.x, (int)torch->position.y, TORCH_HEIGHT,
+                                     grid_width, grid_height)) {
+            atomic_max(&light_levels[index], torch_light_level);
+        }
+    }
 }
