@@ -40,18 +40,22 @@ Grid create_grid(int width, int height) {
     return grid;
 }
 
-Cell get_cell(const Grid& grid, int x, int y) {
-    if (x >= 0 && x < grid.width && y >= 0 && y < grid.height) {
-        return grid.cells[y * grid.width + x];
-    }
-    return {HeightLevel::FLOOR, 0, height_to_color(HeightLevel::FLOOR)};
-}
 
-void render_grid(const Grid& grid) {
-    for (int y = 0; y < grid.height; ++y) {
-        for (int x = 0; x < grid.width; ++x) {
-            const Cell& cell = grid.cells[y * grid.width + x];
-            color final_color = apply_lighting(cell.base_color, cell.light_level);
+void render_grid(const OpenCLWrapper& openclWrapper) {
+    int gridWidth = openclWrapper.getGridWidth();
+    int gridHeight = openclWrapper.getGridHeight();
+
+    std::vector<int> gridHeights;
+    std::vector<int> lightLevels;
+    openclWrapper.readGridHeights(gridHeights);
+    openclWrapper.readLightLevels(lightLevels);
+
+    for (int y = 0; y < gridHeight; ++y) {
+        for (int x = 0; x < gridWidth; ++x) {
+            int index = y * gridWidth + x;
+            HeightLevel height = static_cast<HeightLevel>(gridHeights[index]);
+            color base_color = height_to_color(height);
+            color final_color = apply_lighting(base_color, lightLevels[index]);
             fill_rectangle(final_color, x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
         }
     }

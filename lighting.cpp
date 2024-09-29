@@ -1,16 +1,8 @@
 #include "./include/types.h"
-#include "include/opencl_wrapper.h"
 #include "splashkit.h"
 #include <cmath>
 #include <algorithm>
-#include <vector>
-#include <string>
 
-OpenCLWrapper openclWrapper;
-
-void initialize_lighting() {
-    openclWrapper.initialize();
-}
 
 double calculate_breathing_radius(double base_radius, double total_time) {
     return base_radius + std::sin(total_time * BREATHING_SPEED) * BREATHING_MAGNITUDE;
@@ -22,14 +14,12 @@ void update_torch(Torch& torch, const Player& player, double total_time) {
     torch.current_radius = calculate_breathing_radius(torch.base_radius, total_time);
 }
 
-void update_grid_lighting(Grid& grid, const std::vector<RadialLight>& lights, const Torch& torch, bool torch_on) {
+void update_grid_lighting(const std::vector<RadialLight>& lights, const Torch& torch, bool torch_on, OpenCLWrapper& openclWrapper) {
     try {
-        write_line("Entering update_grid_lighting...");
-        write_line("Grid size: " + std::to_string(grid.width) + "x" + std::to_string(grid.height));
         write_line("Number of lights: " + std::to_string(lights.size()));
         write_line(string("Torch on: ") + (torch_on ? "yes" : "no"));
 
-        openclWrapper.calculateLighting(grid, lights, torch, torch_on);
+        openclWrapper.calculateLighting(lights, torch, torch_on);
 
         write_line("Grid lighting calculation completed.");
     } catch (const cl::Error& e) {
@@ -49,7 +39,7 @@ color apply_lighting(color base_color, int light_level) {
     return rgba_color(r, g, b, 255);
 }
 
-void update_radial_light_mover(RadialLight& light, const Grid& grid, double deltaTime) {
+void update_radial_light_mover(RadialLight& light, int gridWidth, int gridHeight, double deltaTime) {
     const double SPEED = 5.0; // Constant speed, adjust as needed
 
     // Move the light
@@ -57,19 +47,19 @@ void update_radial_light_mover(RadialLight& light, const Grid& grid, double delt
     light.position.y += light.velocity.y * SPEED * deltaTime;
 
     // Check for collisions with grid edges
-    if (light.position.x < 0 || light.position.x >= grid.width) {
+    if (light.position.x < 0 || light.position.x >= gridWidth) {
         light.velocity.x = -light.velocity.x;
-        light.position.x = std::max(0.0, std::min(static_cast<double>(grid.width - 0.01), light.position.x));
+        light.position.x = std::max(0.0, std::min(static_cast<double>(gridWidth - 0.01), light.position.x));
     }
 
-    if (light.position.y < 0 || light.position.y >= grid.height) {
+    if (light.position.y < 0 || light.position.y >= gridHeight) {
         light.velocity.y = -light.velocity.y;
-        light.position.y = std::max(0.0, std::min(static_cast<double>(grid.height - 0.01), light.position.y));
+        light.position.y = std::max(0.0, std::min(static_cast<double>(gridHeight - 0.01), light.position.y));
     }
 }
 
-void update_radial_light_movers(std::vector<RadialLight>& lights, const Grid& grid, double deltaTime) {
+void update_radial_light_movers(std::vector<RadialLight>& lights, int gridWidth, int gridHeight, double deltaTime) {
     for (auto& light : lights) {
-        update_radial_light_mover(light, grid, deltaTime);
+        update_radial_light_mover(light, gridWidth, gridHeight, deltaTime);
     }
 }

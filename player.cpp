@@ -1,7 +1,7 @@
 #include "./include/types.h"
 #include <cmath>
 
-void update_player(Player& player, const Grid& grid) {
+void update_player(Player& player, OpenCLWrapper& openclWrapper) {
     // Update player heading based on mouse position with turn speed
     point_2d mouse_pos = mouse_position();
     double dx = mouse_pos.x / CELL_SIZE - player.position.x;
@@ -52,9 +52,16 @@ void update_player(Player& player, const Grid& grid) {
     double new_y = player.position.y + player.velocity.y;
 
     // Collision detection and boundary checking
-    if (new_x >= 0 && new_x < grid.width && new_y >= 0 && new_y < grid.height) {
-        const Cell& cell = get_cell(grid, static_cast<int>(new_x), static_cast<int>(new_y));
-        if (cell.height <= HeightLevel::PLAYER) {  // Player can walk on FLOOR and PLAYER level
+    int gridWidth = openclWrapper.getGridWidth();
+    int gridHeight = openclWrapper.getGridHeight();
+
+    if (new_x >= 0 && new_x < gridWidth && new_y >= 0 && new_y < gridHeight) {
+        Vector2D start = player.position;
+        Vector2D end = {new_x, new_y};
+        Vector2D hit_point;
+        openclWrapper.getCollisionPoint(start, end, hit_point);
+
+        if (hit_point.x < 0) {  // No collision
             player.position.x = new_x;
             player.position.y = new_y;
         } else {
@@ -63,6 +70,7 @@ void update_player(Player& player, const Grid& grid) {
             if (static_cast<int>(new_y) != static_cast<int>(player.position.y)) player.velocity.y = 0;
         }
     }
+
     if (player.cooldown > 0) {
         player.cooldown -= 1;
     }

@@ -1,5 +1,4 @@
 #include "include/types.h"
-#include "include/opencl_wrapper.h"
 #include "splashkit.h"
 #include <iostream>
 #include <chrono>
@@ -12,8 +11,11 @@
 #include <sstream>
 #include <algorithm>
 
-extern void initialize_lighting();
-extern void update_grid_lighting(Grid& grid, const std::vector<RadialLight>& lights, const Torch& torch, bool torch_on);
+OpenCLWrapper openclWrapper;
+
+void initialize_lighting() {
+    openclWrapper.initialize();
+}
 
 std::vector<RadialLight> create_radial_lights(int num_lights, int grid_width, int grid_height) {
     write_line("Creating radial lights...");
@@ -123,7 +125,8 @@ int main() {
         initialize_lighting();
         write_line("Lighting initialized successfully.");
 
-        Grid grid = create_grid(GRID_WIDTH, GRID_HEIGHT);
+        Grid initialGrid = create_grid(GRID_WIDTH, GRID_HEIGHT);
+        openclWrapper.initializeGrid(initialGrid);
         write_line("Grid created successfully.");
 
         Player player = {{GRID_WIDTH / 2.0, GRID_HEIGHT / 2.0}, {0, 0}, 0, 100};
@@ -168,11 +171,11 @@ int main() {
 
             process_events();
 
-            update_player(player, grid);
+            update_player(player, openclWrapper);
             update_torch(torch, player, total_time);
-            update_bullets(bullets, particles, grid);
+            update_bullets(bullets, particles, openclWrapper);
             update_particles(particles);
-            update_radial_light_movers(radial_lights, grid, delta_time);
+            update_radial_light_movers(radial_lights, openclWrapper.getGridWidth(), openclWrapper.getGridHeight(), delta_time);
 
             if (mouse_down(LEFT_BUTTON) && player.cooldown == 0) {
                 create_bullet(bullets, player);
@@ -183,11 +186,11 @@ int main() {
             }
 
             write_line("Updating grid lighting...");
-            update_grid_lighting(grid, radial_lights, torch, torch_on);
+            update_grid_lighting(radial_lights, torch, torch_on, openclWrapper);
             write_line("Grid lighting updated successfully.");
 
             clear_screen(COLOR_BLACK);
-            render_grid(grid);
+            render_grid(openclWrapper);
             render_player(player);
             render_particles(particles);
             draw_crosshair();

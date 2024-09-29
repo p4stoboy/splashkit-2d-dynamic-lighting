@@ -1,9 +1,14 @@
 #ifndef TYPES_H
 #define TYPES_H
+#define CL_HPP_ENABLE_EXCEPTIONS
+#define CL_HPP_TARGET_OPENCL_VERSION 200
 
 #include "splashkit.h"
 #include <vector>
 #include <cmath>
+#include <CL/opencl.hpp>
+#include <string>
+
 
 const float PI = 3.14159265358979323846f;
 
@@ -104,21 +109,61 @@ struct Particle {
     double velocity_decay;
 };
 
+class OpenCLWrapper {
+public:
+    OpenCLWrapper();
+    ~OpenCLWrapper();
+
+    void initialize();
+    void initializeGrid(const Grid& initialGrid);
+    void calculateLighting(const std::vector<RadialLight>& lights, const Torch& torch, bool torch_on);
+    void addCollisionPoint(int x, int y);
+    void readGridHeights(std::vector<int>& heights) const;
+    void readLightLevels(std::vector<int>& levels) const;
+    void getCollisionPoint(const Vector2D& start, const Vector2D& end, Vector2D& hitPoint) const;
+    int getGridWidth() const { return gridWidth; }
+    int getGridHeight() const { return gridHeight; }
+
+private:
+    void createBuffers(int width, int height);
+    void updateGridHeights();
+    std::string readKernelSource(const std::string& filename);
+    std::string getOpenCLErrorDescription(cl_int error);
+
+    cl::Context context;
+    cl::CommandQueue queue;
+    cl::Program program;
+    cl::Kernel torchKernel;
+    cl::Kernel radialKernel;
+    cl::Kernel updateHeightsKernel;
+    cl::Kernel raycastKernel;
+    cl::Buffer gridHeightsBuffer;
+    cl::Buffer lightLevelsBuffer;
+    cl::Buffer torchBuffer;
+    cl::Buffer radialLightsBuffer;
+    cl::Buffer collisionBuffer;
+
+    std::vector<cl_int2> collisionPoints;
+    int gridWidth;
+    int gridHeight;
+    static const int MAX_COLLISIONS = 1000;
+};
+
 // Function declarations
 Grid create_grid(int width, int height);
 Cell get_cell(const Grid& grid, int x, int y);
-void update_player(Player& player, const Grid& grid);
+void update_player(Player& player, OpenCLWrapper& openclWrapper);
 double calculate_breathing_radius(double base_radius, double total_time);
 void update_torch(Torch& torch, const Player& player, double total_time);
-void update_grid_lighting(Grid& grid, const std::vector<RadialLight>& lights, const Torch& torch, bool torch_on);
-void render_grid(const Grid& grid);
+void update_grid_lighting(const std::vector<RadialLight>& lights, const Torch& torch, bool torch_on, OpenCLWrapper& openclWrapper);
+void render_grid(const OpenCLWrapper& openclWrapper);
 void render_player(const Player& player);
 color apply_lighting(color base_color, int light_level);
-void update_bullets(std::vector<Bullet>& bullets, std::vector<Particle>& particles, Grid& grid);
+void update_bullets(std::vector<Bullet>& bullets, std::vector<Particle>& particles, OpenCLWrapper& openclWrapper);
 void create_bullet(std::vector<Bullet>& bullets, Player& player);
 void render_bullets(const std::vector<Bullet>& bullets);
 bool ray_cast_collision(const Grid& grid, const Vector2D& start, const Vector2D& end, Vector2D& hit_point);
-void update_radial_light_movers(std::vector<RadialLight>& lights, const Grid& grid, double deltaTime);
+void update_radial_light_movers(std::vector<RadialLight>& lights, int gridWidth, int gridHeight, double deltaTime);
 void create_particles(std::vector<Particle>& particles, const Vector2D& hit_point, const Vector2D& normal, int count);
 void update_particles(std::vector<Particle>& particles);
 void render_particles(const std::vector<Particle>& particles);

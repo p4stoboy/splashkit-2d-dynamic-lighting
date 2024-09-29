@@ -58,6 +58,18 @@ bool has_clear_path(__global const int* grid_heights, int x1, int y1, int z1, in
     return true;
 }
 
+__kernel void update_heights(__global int* grid_heights,
+                             __global const int2* collision_points,
+                             const int num_collisions,
+                             const int grid_width) {
+    int gid = get_global_id(0);
+    if (gid < num_collisions) {
+        int2 collision = collision_points[gid];
+        int index = collision.y * grid_width + collision.x;
+        grid_heights[index] = 1;
+    }
+}
+
 __kernel void calculate_radial_lighting(
     __global int* light_levels,
     __global const int* grid_heights,
@@ -148,4 +160,46 @@ __kernel void calculate_torch_lighting(
             atomic_max(&light_levels[index], torch_light_level);
         }
     }
+}
+
+__kernel void raycast(__global const int* grid_heights,
+                      __constant float2* start,
+                      __constant float2* end,
+                      __global float2* hit_point,
+                      const int grid_width,
+                      const int grid_height) {
+    float2 s = *start;
+    float2 e = *end;
+
+    float dx = fabs(e.x - s.x);
+    float dy = fabs(e.y - s.y);
+    int x = (int)s.x;
+    int y = (int)s.y;
+    int n = 1 + (int)(dx + dy);
+    int x_inc = (e.x > s.x) ? 1 : -1;
+    int y_inc = (e.y > s.y) ? 1 : -1;
+    float error = dx - dy;
+    dx *= 2;
+    dy *= 2;
+
+    for (; n > 0; --n) {
+        if (x >= 0 && x < grid_width && y >= 0 && y < grid_height) {
+            int cell_height = grid_heights[y * grid_width + x];
+            if (cell_height > 1) { // Assuming HeightLevel::FLOOR == 1
+                *hit_point = (float2)(x, y);
+                return;
+            }
+        }
+
+        if (error > 0) {
+            x += x_inc;
+            error -= dy;
+        } else {
+            y += y_inc;
+            error += dx;
+        }
+    }
+
+    // No collision found
+    *hit_point = (float2)(-1, -1);
 }

@@ -50,7 +50,7 @@ bool ray_cast_collision(const Grid& grid, const Vector2D& start, const Vector2D&
     return false;
 }
 
-void update_bullets(std::vector<Bullet>& bullets, std::vector<Particle>& particles, Grid& grid) {
+void update_bullets(std::vector<Bullet>& bullets, std::vector<Particle>& particles, OpenCLWrapper& openclWrapper) {
     for (auto it = bullets.begin(); it != bullets.end();) {
         Vector2D start = it->position;
         Vector2D end = {
@@ -59,7 +59,8 @@ void update_bullets(std::vector<Bullet>& bullets, std::vector<Particle>& particl
         };
 
         Vector2D hit_point;
-        bool collision = ray_cast_collision(grid, start, end, hit_point);
+        openclWrapper.getCollisionPoint(start, end, hit_point);
+        bool collision = hit_point.x >= 0; // No collision if x is negative
 
         if (collision) {
             // Calculate hit normal
@@ -83,12 +84,10 @@ void update_bullets(std::vector<Bullet>& bullets, std::vector<Particle>& particl
             }
 
             // Create particles
-            create_particles(particles, hit_point, normal, 30);  // Create 10 particles
+            create_particles(particles, hit_point, normal, 30);
 
-            // Destroy the object
-            Cell& cell = grid.cells[hit_y * grid.width + hit_x];
-            cell.height = HeightLevel::FLOOR;
-            cell.base_color = height_to_color(HeightLevel::FLOOR);
+            // Destroy the cell
+            openclWrapper.addCollisionPoint(hit_x, hit_y);
 
             // Destroy the bullet
             it = bullets.erase(it);
@@ -98,8 +97,8 @@ void update_bullets(std::vector<Bullet>& bullets, std::vector<Particle>& particl
             it->lifetime--;
 
             if (it->lifetime <= 0 ||
-                it->position.x < 0 || it->position.x >= grid.width ||
-                it->position.y < 0 || it->position.y >= grid.height) {
+                it->position.x < 0 || it->position.x >= openclWrapper.getGridWidth() ||
+                it->position.y < 0 || it->position.y >= openclWrapper.getGridHeight()) {
                 it = bullets.erase(it);
             } else {
                 ++it;
