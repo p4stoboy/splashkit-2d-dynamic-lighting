@@ -1,5 +1,4 @@
 #include "./include/types.h"
-#include <random>
 #include <cmath>
 
 
@@ -25,7 +24,7 @@ void create_particles(std::vector<Particle>& particles, const Vector2D& hit_poin
         p.velocity.y = std::sin(angle) * velocity_magnitude;
 
         p.lifetime = lifetime_dist(gen);
-        p.particle_color = rgba_color(255, 255, 255, 255);  // Reddish color
+        p.particle_color = rgba_color(255, 255, 255, 255);
         p.velocity_decay = 0.7;  // 5% velocity decrease per frame
         particles.push_back(p);
     }
@@ -51,13 +50,13 @@ void update_particles(std::vector<Particle>& particles) {
 
 void render_particles(const std::vector<Particle>& particles) {
     for (const auto& p : particles) {
-        double alpha = static_cast<double>(p.lifetime) / 40.0;  // Adjusted for new max lifetime
+        double alpha = static_cast<double>(p.lifetime) / 40.0;
         color particle_color = rgba_color(
                 red_of(p.particle_color),
                 green_of(p.particle_color),
                 blue_of(p.particle_color),
                 static_cast<int>(alpha * 255)
         );
-        fill_circle(particle_color, p.position.x * CELL_SIZE, p.position.y * CELL_SIZE, 1);  // Reduced size to 1
+        fill_circle(particle_color, p.position.x * CELL_SIZE, p.position.y * CELL_SIZE, 1);
     }
 }

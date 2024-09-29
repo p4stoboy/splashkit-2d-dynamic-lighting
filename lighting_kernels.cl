@@ -94,7 +94,7 @@ __kernel void calculate_radial_lighting(
         float radius = (float)lights[i].radius;
 
         if (distance_squared > radius * radius) {
-            continue;  // Lights are sorted by radius, so we can exit early
+            continue;
         }
 
         if (has_clear_path(grid_heights, x, y, cell_height,

@@ -1,3 +1,12 @@
+/**
+ * @file opencl_wrapper.cpp
+ * @brief Implements the OpenCLWrapper class for GPU-accelerated computations.
+ *
+ * This file contains the implementation of the OpenCLWrapper class, which
+ * handles initialization of OpenCL, kernel execution, and memory management
+ * for GPU-accelerated lighting and collision detection.
+ */
+
 #include "./include/types.h"
 #include <fstream>
 #include <iostream>
@@ -6,6 +15,9 @@ OpenCLWrapper::OpenCLWrapper() : gridWidth(0), gridHeight(0) {}
 
 OpenCLWrapper::~OpenCLWrapper() {}
 
+/**
+ * @brief Initializes the OpenCL environment and compiles the kernels.
+ */
 void OpenCLWrapper::initialize() {
     try {
         std::vector<cl::Platform> platforms;
@@ -40,6 +52,10 @@ void OpenCLWrapper::initialize() {
     }
 }
 
+/**
+ * @brief Initializes the grid data on the GPU.
+ * @param initialGrid The initial grid state.
+ */
 void OpenCLWrapper::initializeGrid(const Grid& initialGrid) {
     gridWidth = initialGrid.width;
     gridHeight = initialGrid.height;
@@ -53,6 +69,11 @@ void OpenCLWrapper::initializeGrid(const Grid& initialGrid) {
     queue.enqueueWriteBuffer(gridHeightsBuffer, CL_TRUE, 0, gridWidth * gridHeight * sizeof(cl_int), gridHeights.data());
 }
 
+/**
+ * @brief Creates OpenCL buffers for grid data.
+ * @param width The width of the grid.
+ * @param height The height of the grid.
+ */
 void OpenCLWrapper::createBuffers(int width, int height) {
     size_t gridSize = width * height;
     gridHeightsBuffer = cl::Buffer(context, CL_MEM_READ_WRITE, gridSize * sizeof(int));
@@ -61,10 +82,18 @@ void OpenCLWrapper::createBuffers(int width, int height) {
     radialLightsBuffer = cl::Buffer(context, CL_MEM_READ_ONLY, MAX_RADIAL_LIGHTS * sizeof(RadialLight));
 }
 
+/**
+ * @brief Adds a collision point to be processed.
+ * @param x The x-coordinate of the collision point.
+ * @param y The y-coordinate of the collision point.
+ */
 void OpenCLWrapper::addCollisionPoint(int x, int y) {
     collisionPoints.push_back({static_cast<cl_int>(x), static_cast<cl_int>(y)});
 }
 
+/**
+ * @brief Updates the grid heights based on collision points.
+ */
 void OpenCLWrapper::updateGridHeights() {
     if (!collisionPoints.empty()) {
         queue.enqueueWriteBuffer(collisionBuffer, CL_TRUE, 0,
@@ -82,6 +111,12 @@ void OpenCLWrapper::updateGridHeights() {
     }
 }
 
+/**
+ * @brief Calculates lighting for the entire grid.
+ * @param lights The radial lights in the scene.
+ * @param torch The player's torch.
+ * @param torch_on Whether the torch is turned on.
+ */
 void OpenCLWrapper::calculateLighting(const std::vector<RadialLight>& lights, const Torch& torch, bool torch_on) {
     try {
         updateGridHeights();
@@ -117,16 +152,30 @@ void OpenCLWrapper::calculateLighting(const std::vector<RadialLight>& lights, co
     }
 }
 
+/**
+ * @brief Reads the current grid heights from the GPU.
+ * @param heights Vector to store the read heights.
+ */
 void OpenCLWrapper::readGridHeights(std::vector<int>& heights) const {
     heights.resize(gridWidth * gridHeight);
     queue.enqueueReadBuffer(gridHeightsBuffer, CL_TRUE, 0, gridWidth * gridHeight * sizeof(int), heights.data());
 }
 
+/**
+ * @brief Reads the current light levels from the GPU.
+ * @param levels Vector to store the read light levels.
+ */
 void OpenCLWrapper::readLightLevels(std::vector<int>& levels) const {
     levels.resize(gridWidth * gridHeight);
     queue.enqueueReadBuffer(lightLevelsBuffer, CL_TRUE, 0, gridWidth * gridHeight * sizeof(int), levels.data());
 }
 
+/**
+ * @brief Performs a raycast to find a collision point.
+ * @param start The start point of the ray.
+ * @param end The end point of the ray.
+ * @param hitPoint The resulting collision point (if any).
+ */
 void OpenCLWrapper::getCollisionPoint(const Vector2D& start, const Vector2D& end, Vector2D& hitPoint) const {
     cl_float2 clStart = {{static_cast<cl_float>(start.x), static_cast<cl_float>(start.y)}};
     cl_float2 clEnd = {{static_cast<cl_float>(end.x), static_cast<cl_float>(end.y)}};
@@ -136,7 +185,7 @@ void OpenCLWrapper::getCollisionPoint(const Vector2D& start, const Vector2D& end
     cl::Buffer endBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(cl_float2), &clEnd);
     cl::Buffer hitPointBuffer(context, CL_MEM_WRITE_ONLY, sizeof(cl_float2));
 
-    cl::Kernel localRaycastKernel(raycastKernel); // Create a local copy of the kernel
+    cl::Kernel localRaycastKernel(raycastKernel);
 
     localRaycastKernel.setArg(0, gridHeightsBuffer);
     localRaycastKernel.setArg(1, startBuffer);
@@ -145,7 +194,7 @@ void OpenCLWrapper::getCollisionPoint(const Vector2D& start, const Vector2D& end
     localRaycastKernel.setArg(4, static_cast<cl_int>(gridWidth));
     localRaycastKernel.setArg(5, static_cast<cl_int>(gridHeight));
 
-    cl::CommandQueue localQueue(queue); // Create a local copy of the queue
+    cl::CommandQueue localQueue(queue);
 
     localQueue.enqueueNDRangeKernel(localRaycastKernel, cl::NullRange, cl::NDRange(1));
     localQueue.enqueueReadBuffer(hitPointBuffer, CL_TRUE, 0, sizeof(cl_float2), &clHitPoint);
@@ -154,6 +203,11 @@ void OpenCLWrapper::getCollisionPoint(const Vector2D& start, const Vector2D& end
     hitPoint.y = clHitPoint.s[1];
 }
 
+/**
+ * @brief Reads the OpenCL kernel source from a file.
+ * @param filename The name of the file containing the kernel source.
+ * @return The kernel source as a string.
+ */
 std::string OpenCLWrapper::readKernelSource(const std::string& filename) {
     std::ifstream file(filename);
     if (!file.is_open()) {
@@ -162,6 +216,11 @@ std::string OpenCLWrapper::readKernelSource(const std::string& filename) {
     return std::string(std::istreambuf_iterator<char>(file), (std::istreambuf_iterator<char>()));
 }
 
+/**
+ * @brief Provides a description for OpenCL error codes.
+ * @param error The OpenCL error code.
+ * @return A string describing the error.
+ */
 std::string OpenCLWrapper::getOpenCLErrorDescription(cl_int error) {
     switch (error) {
         case CL_INVALID_KERNEL_ARGS: return "Invalid kernel arguments";

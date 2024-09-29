@@ -1,3 +1,11 @@
+/**
+ * @file types.h
+ * @brief Defines the data structures and constants used throughout the game.
+ *
+ * This file contains definitions for game entities such as Player, Bullet, and Grid,
+ * as well as the OpenCLWrapper class for handling GPU computations.
+ */
+
 #ifndef TYPES_H
 #define TYPES_H
 #define CL_HPP_ENABLE_EXCEPTIONS
@@ -8,18 +16,16 @@
 #include <cmath>
 #include <CL/opencl.hpp>
 #include <string>
+#include <random>
 
-
+const int MAX_RADIAL_LIGHTS = 5;
 const float PI = 3.14159265358979323846f;
-
-const int MAX_RADIAL_LIGHTS = 10;
 
 const int SCREEN_WIDTH = 900;
 const int SCREEN_HEIGHT = 900;
 const int GRID_WIDTH = 150;
 const int GRID_HEIGHT = 150;
 const int CELL_SIZE = SCREEN_WIDTH / GRID_WIDTH;
-const int MAX_HEIGHT = 80;
 
 const double AMBIENT_LIGHT = 0.1;
 const int LIGHT_LEVELS = 5;
@@ -28,8 +34,6 @@ const double BREATHING_SPEED = 2.0;
 const double BREATHING_MAGNITUDE = 3.0;
 
 const double TORCH_RADIUS = 18.0;
-const double TORCH_ANGLE = 60.0;
-const double TORCH_ANGLE_RAD = TORCH_ANGLE * M_PI / 180.0;
 
 const double PLAYER_TURN_SPEED = 0.07;
 const double PLAYER_ACCELERATION = 0.05;
@@ -44,8 +48,8 @@ const int BULLET_LIFETIME = 60;
 
 enum class HeightLevel {
     BLOCK1 = 5,
-    BLOCK2 = 10,
-    BLOCK3 = 15,
+    BLOCK2 = 15,
+    BLOCK3 = 25,
     FLOOR = 1,
     BOX = 15,
     PLAYER = 10,
@@ -151,7 +155,6 @@ private:
 
 // Function declarations
 Grid create_grid(int width, int height);
-Cell get_cell(const Grid& grid, int x, int y);
 void update_player(Player& player, OpenCLWrapper& openclWrapper);
 double calculate_breathing_radius(double base_radius, double total_time);
 void update_torch(Torch& torch, const Player& player, double total_time);
@@ -162,13 +165,11 @@ color apply_lighting(color base_color, int light_level);
 void update_bullets(std::vector<Bullet>& bullets, std::vector<Particle>& particles, OpenCLWrapper& openclWrapper);
 void create_bullet(std::vector<Bullet>& bullets, Player& player);
 void render_bullets(const std::vector<Bullet>& bullets);
-bool ray_cast_collision(const Grid& grid, const Vector2D& start, const Vector2D& end, Vector2D& hit_point);
 void update_radial_light_movers(std::vector<RadialLight>& lights, int gridWidth, int gridHeight, double deltaTime);
 void create_particles(std::vector<Particle>& particles, const Vector2D& hit_point, const Vector2D& normal, int count);
 void update_particles(std::vector<Particle>& particles);
 void render_particles(const std::vector<Particle>& particles);
 void draw_crosshair();
-void initialize_lighting();
 
 inline color height_to_color(HeightLevel height) {
     switch (height) {
@@ -181,6 +182,5 @@ inline color height_to_color(HeightLevel height) {
         default: return rgba_color(200, 200, 200, 255);
     }
 }
-
 
 #endif // TYPES_H
